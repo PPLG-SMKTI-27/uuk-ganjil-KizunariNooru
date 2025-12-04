@@ -1,6 +1,7 @@
 <?php
-define("BASE_URL", "/UUK_FAHRI_NOOR_ROYYAN_GANJIL/Public/");
-define("DB_HOST", 'localhost');
-define("DB_NAME", 'perijinan_siswa');
-define("DB_USER", 'root');
-define("DB_PASS", 'password');
+// Konfigurasi dasar aplikasi
+define("BASE_URL", "/uuk-ganjil-KizunariNooru/Public/"); // URL dasar untuk mengakses folder Public
+define("DB_HOST", 'localhost'); // Host database
+define("DB_NAME", 'perijinan_siswa'); // Nama database
+define("DB_USER", 'root'); // Username database
+define("DB_PASS", ''); // Password database (kosong untuk default)
