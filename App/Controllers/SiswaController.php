@@ -1,195 +1,211 @@
 <?php
+/**
+ * Siswa Controller
+ * Mengelola aksi siswa: dashboard, ajukan izin, riwayat, profil
+ */
+
 require_once __DIR__ . '/../Models/Izin.php';
 require_once __DIR__ . '/../Models/Siswa.php';
+require_once __DIR__ . '/../Middleware/Auth.php';
+require_once __DIR__ . '/../Helpers/Validator.php';
 
 class SiswaController {
-
-  // ───────────────────────────────────────────────
-  // Helper: pastikan user login
-  private function auth() {
-    if (!isset($_SESSION['user'])) {
-      header('Location: ../Public/index.php');
-      exit;
-    }
-  }
-
-  // Helper: ambil data siswa berdasarkan user login
-  private function getLoggedSiswa() {
-    $u = $_SESSION['user'];
-    $sM = new Siswa();
-    return $sM->findByUserId($u['id_user']);
-  }
-
-  // Helper: Set flash message
-  private function setFlash($type, $msg) {
-    $_SESSION['flash'] = ['type' => $type, 'msg' => $msg];
-  }
-
-  // ───────────────────────────────────────────────
-  public function dashboard() {
-    $this->auth();
-
-    $s = $this->getLoggedSiswa();
-    $izinM = new Izin();
-    $list = $izinM->getBySiswa($s['id_siswa'] ?? 0);
-
-    include __DIR__ . '/../Views/siswa/dashboard.php';
-  }
-
-  // ───────────────────────────────────────────────
-  public function index() {
-    $this->auth();
-
-    $s = $this->getLoggedSiswa();
-    $izinM = new Izin();
-    $data = $izinM->getBySiswa($s['id_siswa'] ?? 0);
-
-    include __DIR__ . '/../Views/siswa/index.php';
-  }
-
-  // ───────────────────────────────────────────────
-  public function izin() {
-    $this->auth();
-
-    $s = $this->getLoggedSiswa();
-    $izinM = new Izin();
-    $data = $izinM->getBySiswa($s['id_siswa'] ?? 0);
-
-    include __DIR__ . '/../Views/siswa/index.php';
-  }
-
-  // ───────────────────────────────────────────────
-  public function create() {
-    $this->auth();
-    include __DIR__ . '/../Views/siswa/create.php';
-  }
-
-  // ───────────────────────────────────────────────
-  public function store() {
-    $this->auth();
-
-    $s = $this->getLoggedSiswa();
-    if (!$s || !isset($s['id_siswa'])) {
-      $this->setFlash('error', 'Data siswa tidak ditemukan. Silakan hubungi admin.');
-      header('Location: ../Public/index.php?c=siswa&m=create');
-      exit;
-    }
-    $id_siswa = $s['id_siswa'];
-
-    // Ambil input
-    $kep     = trim($_POST['keperluan'] ?? '');
-    $keluar  = $_POST['keluar'] ?? '';
-    $kembali = $_POST['kembali'] ?? '';
-
-    // Validasi
-    if (strlen($kep) < 5) {
-      $this->setFlash('error', 'Keperluan minimal 5 karakter');
-      header('Location: ../Public/index.php?c=siswa&m=create');
-      exit;
+    /**
+     * Dashboard siswa
+     */
+    public      function dashboard() {
+        Guard::requireRole('Siswa');
+        include __DIR__ . '/../Views/siswa/dashboard.php';
     }
 
-    if (strtotime($kembali) < strtotime($keluar)) {
-      $this->setFlash('error', 'Rencana kembali harus setelah rencana keluar');
-      header('Location: ../Public/index.php?c=siswa&m=create');
-      exit;
-    }
+    /**
+     * Halaman form ajukan izin
+     */
+    public function create() {
+        Guard::requireRole('Siswa');
 
-    // Simpan izin
-    $izinM = new Izin();
-    if ($izinM->create($id_siswa, $kep, $keluar, $kembali)) {
-      $this->setFlash('success', 'Izin berhasil diajukan');
-    } else {
-      $this->setFlash('error', 'Gagal mengajukan izin');
-    }
-
-    header('Location: ../Public/index.php?c=siswa&m=izin');
-    exit;
-  }
-
-  // ───────────────────────────────────────────────
-  public function delete() {
-    $this->auth();
-
-    $id = (int)($_GET['id'] ?? 0);
-
-    $izinM = new Izin();
-    if ($izinM->delete($id)) {
-      $this->setFlash('success', 'Izin dihapus');
-    } else {
-      $this->setFlash('error', 'Gagal menghapus izin');
-    }
-
-    header('Location: ../Public/index.php?c=siswa&m=izin');
-    exit;
-  }
-
-  // ───────────────────────────────────────────────
-  public function edit() {
-    $this->auth(); // Pastikan siswa sudah login
-
-    $id = (int)($_GET['id'] ?? 0);
-
-    $s = $this->getLoggedSiswa();
-    $izinM = new Izin();
-
-    // Ambil data izin berdasarkan id_izin
-    $izin = $izinM->getBySiswa($s['id_siswa']);
-
-    // Cari izin berdasarkan id_izin dan status pending
-    $izinToEdit = null;
-    foreach ($izin as $z) {
-        if ($z['id_izin'] == $id && $z['status'] == 'pending') {
-            $izinToEdit = $z;
-            break;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            return $this->storeIzin();
         }
+
+        include __DIR__ . '/../Views/siswa/create.php';
     }
 
-    // Jika izin ditemukan dan statusnya pending, tampilkan form edit
-    if ($izinToEdit) {
-        include __DIR__ . '/../Views/siswa/edit.php';
-    } else {
-        $this->setFlash('error', 'Izin tidak ditemukan atau sudah diproses');
-        header('Location: ../Public/index.php?c=siswa&m=izin');
+    /**
+     * Process ajukan izin
+     */
+    private function storeIzin() {
+        // Verify CSRF
+        if (!isset($_POST['csrf_token']) || !Csrf::verify($_POST['csrf_token'])) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Invalid CSRF token'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.create');
+            exit;
+        }
+
+        $user = Auth::user();
+        $siswaModel = new Siswa();
+        $siswa = $siswaModel->findByUserId($user['id_user']);
+
+        // Validation
+        $errors = [];
+        $keperluan = Sanitizer::text($_POST['keperluan'] ?? '');
+        $rencana_keluar = trim($_POST['rencana_keluar'] ?? '');
+        $rencana_kembali = trim($_POST['rencana_kembali'] ?? '');
+
+        if (!Validator::required($keperluan)) {
+            $errors['keperluan'] = 'Alasan izin harus diisi';
+        }
+
+        if (!Validator::dateFormat($rencana_keluar)) {
+            $errors['rencana_keluar'] = 'Format tanggal keluar tidak valid';
+        }
+
+        if (!Validator::dateFormat($rencana_kembali)) {
+            $errors['rencana_kembali'] = 'Format tanggal kembali tidak valid';
+        }
+
+        if (!empty($errors)) {
+            $_SESSION['form_errors'] = $errors;
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.create');
+            exit;
+        }
+
+        // Create izin
+        $izinModel = new Izin();
+        $result = $izinModel->create($siswa['id_siswa'], $keperluan, $rencana_keluar, $rencana_kembali);
+
+        if ($result) {
+            $_SESSION['flash'] = ['type' => 'success', 'msg' => 'Izin berhasil diajukan. Tunggu persetujuan wali kelas.'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.dashboard');
+        } else {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Gagal mengajukan izin'];
+            $_SESSION['form_errors'] = $errors; // Use local errors instead of Validator::errors()
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.create');
+        }
         exit;
     }
-  }
 
-  // ───────────────────────────────────────────────
-  public function update() {
-    $this->auth(); // Pastikan siswa sudah login
+    /**
+     * Halaman riwayat izin
+     */
+    public function history() {
+        Guard::requireRole('Siswa');
 
-    $s = $this->getLoggedSiswa();
-    $id_siswa = $s['id_siswa'] ?? 0;
+        $user = Auth::user();
+        $siswaModel = new Siswa();
+        $siswa = $siswaModel->findByUserId($user['id_user']);
 
-    // Ambil input dari form
-    $id_izin = (int)($_POST['id_izin'] ?? 0);
-    $keperluan = trim($_POST['keperluan'] ?? '');
-    $keluar = $_POST['keluar'] ?? '';
-    $kembali = $_POST['kembali'] ?? '';
+        $izinModel = new Izin();
+        $data = $izinModel->getBySiswa($siswa['id_siswa']);
 
-    // Validasi input
-    if (strlen($keperluan) < 5) {
-        $this->setFlash('error', 'Keperluan minimal 5 karakter');
-        header("Location: ../Public/index.php?c=siswa&m=edit&id=$id_izin");
+        include __DIR__ . '/../Views/siswa/index.php';
+    }
+
+    /**
+     * Halaman profil siswa
+     */
+    public function profile() {
+        Guard::requireRole('Siswa');
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            return $this->updateProfile();
+        }
+
+        $user = Auth::user();
+        $siswaModel = new Siswa();
+        $siswa = $siswaModel->findByUserId($user['id_user']);
+
+        include __DIR__ . '/../Views/siswa/profile.php';
+    }
+
+    /**
+     * Update profil siswa
+     */
+    private function updateProfile() {
+        // Verify CSRF
+        if (!isset($_POST['csrf_token']) || !Csrf::verify($_POST['csrf_token'])) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Invalid CSRF token'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.profile');
+            exit;
+        }
+
+        $user = Auth::user();
+        $siswaModel = new Siswa();
+        $siswa = $siswaModel->findByUserId($user['id_user']);
+
+        // Validation
+        $errors = [];
+        $nama_siswa = Sanitizer::string($_POST['nama_siswa'] ?? '');
+        $alamat = Sanitizer::string($_POST['alamat'] ?? '');
+
+        if (!Validator::required($nama_siswa)) {
+            $errors['nama_siswa'] = 'Nama harus diisi';
+        }
+
+        if (!empty($errors)) {
+            $_SESSION['form_errors'] = $errors;
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.profile');
+            exit;
+        }
+
+        // Update
+        $result = $siswaModel->update($siswa['id_siswa'], $nama_siswa, null, null, $alamat);
+
+        if ($result) {
+            $_SESSION['flash'] = ['type' => 'success', 'msg' => 'Profil berhasil diperbarui'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.profile');
+        } else {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Gagal memperbarui profil'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.profile');
+        }
         exit;
     }
 
-    if (strtotime($kembali) < strtotime($keluar)) {
-        $this->setFlash('error', 'Rencana kembali harus setelah rencana keluar');
-        header("Location: ../Public/index.php?c=siswa&m=edit&id=$id_izin");
+    /**
+     * Delete izin (hanya izin pending)
+     */
+    public function delete() {
+        Guard::requireRole('Siswa');
+
+        if (!isset($_GET['id'])) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'ID izin tidak valid'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.history');
+            exit;
+        }
+
+        $id_izin = (int)$_GET['id'];
+
+        // Cek owner
+        $izinModel = new Izin();
+        $izin = $izinModel->findById($id_izin);
+
+        if (!$izin) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Izin tidak ditemukan'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.history');
+            exit;
+        }
+
+        // Verify ownership
+        $user = Auth::user();
+        $siswaModel = new Siswa();
+        $siswa = $siswaModel->findByUserId($user['id_user']);
+
+        if ($izin['id_siswa'] != $siswa['id_siswa']) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Akses ditolak'];
+            header('Location: ' . BASE_URL . 'index.php?action=siswa.history');
+            exit;
+        }
+
+        // Delete
+        $result = $izinModel->delete($id_izin);
+
+        if ($result) {
+            $_SESSION['flash'] = ['type' => 'success', 'msg' => 'Izin berhasil dihapus'];
+        } else {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Hanya izin dengan status pending yang dapat dihapus'];
+        }
+
+        header('Location: ' . BASE_URL . 'index.php?action=siswa.history');
         exit;
     }
-
-    // Update izin
-    $izinM = new Izin();
-    if ($izinM->updateIzin($id_izin, $keperluan, $keluar, $kembali)) {
-        $this->setFlash('success', 'Izin berhasil diperbarui');
-    } else {
-        $this->setFlash('error', 'Gagal memperbarui izin');
-    }
-
-    header('Location: ../Public/index.php?c=siswa&m=izin');
-    exit;
-  }
 }
-?>

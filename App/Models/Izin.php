@@ -1,126 +1,246 @@
 <?php
+/**
+ * Izin Model
+ * Mengelola data izin siswa dengan prepared statements & validasi
+ */
+
 require_once __DIR__ . '/../Config/Database.php';
+require_once __DIR__ . '/../Helpers/Validator.php';
 
 class Izin {
     private $db;
 
-    public function __construct(){
-        $this->db = Database::connect(); 
+    public function __construct() {
+        $this->db = Database::getInstance();
     }
 
-    // Fungsi untuk mengecek apakah pegawai dengan id_user tertentu ada dan jabatan WaliKelas
-    private function isPegawaiExist($id_user) {
-        $stmt = $this->db->prepare("SELECT id_pegawai FROM pegawai WHERE id_user = ? AND jabatan = 'WaliKelas' LIMIT 1");
-        $stmt->bind_param("i", $id_user);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        if ($result->num_rows > 0) {
-            $row = $result->fetch_assoc();
-            return $row['id_pegawai'];
+    /**
+     * Get izin by ID
+     */
+    public function findById($id_izin) {
+        $sql = "SELECT * FROM tb_izin WHERE id_izin = ? LIMIT 1";
+        return $this->db->fetchOne($sql, [(int)$id_izin], 'i');
+    }
+
+    /**
+     * Get all izin by siswa
+     */
+    public function getBySiswa($id_siswa) {
+        $sql = "SELECT i.*, s.nama_siswa, s.kelas, s.nisn 
+                FROM tb_izin i 
+                JOIN siswa s ON i.id_siswa = s.id_siswa 
+                WHERE i.id_siswa = ? 
+                ORDER BY i.rencana_keluar DESC";
+        return $this->db->fetchAll($sql, [(int)$id_siswa], 'i');
+    }
+
+    /**
+     * Get all izin (untuk guru/admin)
+     */
+    public function getAll($status = null, $kelas = null) {
+        $sql = "SELECT i.*, s.nama_siswa, s.kelas, p.nama as nama_wali 
+                FROM tb_izin i 
+                JOIN siswa s ON i.id_siswa = s.id_siswa 
+                LEFT JOIN pegawai p ON i.id_approve = p.id_pegawai 
+                WHERE 1=1";
+        
+        $params = [];
+        $types = '';
+
+        if ($status) {
+            $sql .= " AND i.status = ?";
+            $params[] = $status;
+            $types .= 's';
         }
-        return false;
+
+        if ($kelas) {
+            $sql .= " AND s.kelas = ?";
+            $params[] = $kelas;
+            $types .= 's';
+        }
+
+        $sql .= " ORDER BY i.rencana_keluar DESC";
+
+        return $this->db->fetchAll($sql, $params, $types);
     }
 
-    // Fungsi untuk update status izin
-    public function updateStatus($id, $status, $waliId, $komentar = null){
-        $id = (int)$id;
-        $waliId = (int)$waliId;
+    /**
+     * Get izin untuk wali kelas tertentu
+     */
+    public function getForWali($id_wali, $status = null) {
+        $sql = "SELECT i.*, s.nama_siswa, s.kelas, s.nisn 
+                FROM tb_izin i 
+                JOIN siswa s ON i.id_siswa = s.id_siswa 
+                WHERE s.id_walikelas = ?";
+        
+        $params = [(int)$id_wali];
+        $types = 'i';
 
+        if ($status) {
+            $sql .= " AND i.status = ?";
+            $params[] = $status;
+            $types .= 's';
+        }
+
+        $sql .= " ORDER BY i.rencana_keluar DESC";
+
+        return $this->db->fetchAll($sql, $params, $types);
+    }
+
+    /**
+     * Create izin (untuk siswa)
+     */
+    public function create($id_siswa, $keperluan, $rencana_keluar, $rencana_kembali) {
+        // Validasi
+        if (!Validator::required($keperluan)) {
+            Validator::addError('keperluan', 'Alasan izin harus diisi');
+            return false;
+        }
+
+        if (!Validator::dateFormat($rencana_keluar)) {
+            Validator::addError('rencana_keluar', 'Format tanggal keluar tidak valid');
+            return false;
+        }
+
+        if (!Validator::dateFormat($rencana_kembali)) {
+            Validator::addError('rencana_kembali', 'Format tanggal kembali tidak valid');
+            return false;
+        }
+
+        // Cek tanggal kembali >= tanggal keluar
+        if (strtotime($rencana_kembali) < strtotime($rencana_keluar)) {
+            Validator::addError('rencana_kembali', 'Tanggal kembali harus >= tanggal keluar');
+            return false;
+        }
+
+        // Insert
+        $sql = "INSERT INTO tb_izin (id_siswa, keperluan, rencana_keluar, rencana_kembali, status) 
+                VALUES (?, ?, ?, ?, 'pending')";
+        
+        $this->db->query($sql, [(int)$id_siswa, $keperluan, $rencana_keluar, $rencana_kembali], 'isss');
+
+        return $this->db->affectedRows() > 0 ? $this->db->lastInsertId() : false;
+    }
+
+    /**
+     * Update izin (hanya jika masih pending)
+     */
+    public function update($id_izin, $keperluan = null, $rencana_keluar = null, $rencana_kembali = null) {
+        // Cek status masih pending
+        $izin = $this->findById((int)$id_izin);
+        if (!$izin || $izin['status'] !== 'pending') {
+            Validator::addError('status', 'Hanya izin dengan status pending yang dapat diubah');
+            return false;
+        }
+
+        $updates = [];
+        $params = [];
+        $types = '';
+
+        if ($keperluan !== null) {
+            if (!Validator::required($keperluan)) {
+                Validator::addError('keperluan', 'Alasan izin harus diisi');
+                return false;
+            }
+            $updates[] = "keperluan = ?";
+            $params[] = $keperluan;
+            $types .= 's';
+        }
+
+        if ($rencana_keluar !== null) {
+            if (!Validator::dateFormat($rencana_keluar)) {
+                Validator::addError('rencana_keluar', 'Format tanggal keluar tidak valid');
+                return false;
+            }
+            $updates[] = "rencana_keluar = ?";
+            $params[] = $rencana_keluar;
+            $types .= 's';
+        }
+
+        if ($rencana_kembali !== null) {
+            if (!Validator::dateFormat($rencana_kembali)) {
+                Validator::addError('rencana_kembali', 'Format tanggal kembali tidak valid');
+                return false;
+            }
+            $updates[] = "rencana_kembali = ?";
+            $params[] = $rencana_kembali;
+            $types .= 's';
+        }
+
+        if (empty($updates)) {
+            return false;
+        }
+
+        $params[] = (int)$id_izin;
+        $types .= 'i';
+
+        $sql = "UPDATE tb_izin SET " . implode(', ', $updates) . " WHERE id_izin = ?";
+        $this->db->query($sql, $params, $types);
+
+        return $this->db->affectedRows() > 0;
+    }
+
+    /**
+     * Update status izin (untuk wali kelas/admin)
+     */
+    public function updateStatus($id_izin, $status, $id_approve) {
         $validStatuses = ['pending', 'diizinkan', 'ditolak'];
         if (!in_array($status, $validStatuses)) {
-            echo "Status yang diberikan tidak valid.";
+            Validator::addError('status', 'Status tidak valid');
             return false;
         }
 
-        $idPegawai = $this->isPegawaiExist($waliId);
-        if (!$idPegawai) {
-            echo "ID Pegawai (Wali) tidak ditemukan.";
+        $sql = "UPDATE tb_izin SET status = ?, id_approve = ? WHERE id_izin = ?";
+        $this->db->query($sql, [$status, (int)$id_approve, (int)$id_izin], 'sii');
+
+        return $this->db->affectedRows() > 0;
+    }
+
+    /**
+     * Delete izin
+     */
+    public function delete($id_izin) {
+        // Cek hanya bisa delete jika status pending
+        $izin = $this->findById((int)$id_izin);
+        if (!$izin || $izin['status'] !== 'pending') {
+            Validator::addError('status', 'Hanya izin dengan status pending yang dapat dihapus');
             return false;
         }
 
-        $status = $this->db->real_escape_string($status);
-        $komentar = $komentar ? $this->db->real_escape_string($komentar) : null;
+        $sql = "DELETE FROM tb_izin WHERE id_izin = ?";
+        $this->db->query($sql, [(int)$id_izin], 'i');
 
-        $query = "UPDATE tb_izin SET status=?, id_approve=?, komentar_wali=? WHERE id_izin=?";
-        $stmt = $this->db->prepare($query);
-        if (!$stmt) {
-            echo "Error preparing the query: " . $this->db->error;
-            return false;
-        }
-
-        $stmt->bind_param("sisi", $status, $idPegawai, $komentar, $id);
-
-        if ($stmt->execute()) {
-            return true;
-        } else {
-            echo "Terjadi kesalahan saat mengupdate status izin: " . $stmt->error;
-            return false;
-        }
+        return $this->db->affectedRows() > 0;
     }
 
-    public function getBySiswa($id_siswa){
-        $id = (int)$id_siswa;
-        $q = $this->db->query("SELECT tb_izin.*, siswa.kelas, siswa.nisn, siswa.nik, siswa.alamat 
-                               FROM tb_izin 
-                               JOIN siswa ON tb_izin.id_siswa = siswa.id_siswa 
-                               WHERE tb_izin.id_siswa = $id 
-                               ORDER BY tb_izin.id_izin DESC");
-        return $q ? $q->fetch_all(MYSQLI_ASSOC) : [];
+    /**
+     * Delete semua izin by siswa (untuk cascading delete)
+     */
+    public function deleteBySiswa($id_siswa) {
+        $sql = "DELETE FROM tb_izin WHERE id_siswa = ?";
+        $this->db->query($sql, [(int)$id_siswa], 'i');
+
+        return $this->db->affectedRows() > 0;
     }
 
-    public function create($id_siswa, $keperluan, $keluar, $kembali){
-        $id = (int)$id_siswa;
-        $keperluan = $this->db->real_escape_string($keperluan);
-        $keluar = $this->db->real_escape_string($keluar);
-        $kembali = $this->db->real_escape_string($kembali);
-
-        return $this->db->query("INSERT INTO tb_izin (id_siswa, keperluan, rencana_keluar, rencana_kembali, status) 
-                                 VALUES ($id, '$keperluan', '$keluar', '$kembali', 'pending')");
+    /**
+     * Count izin dengan status tertentu
+     */
+    public function countByStatus($status) {
+        $sql = "SELECT COUNT(*) as total FROM tb_izin WHERE status = ?";
+        $result = $this->db->fetchOne($sql, [$status], 's');
+        return $result['total'] ?? 0;
     }
 
-    public function delete($id){
-        $id = (int)$id;
-        return $this->db->query("DELETE FROM tb_izin WHERE id_izin=$id");
+    /**
+     * Get statistics
+     */
+    public function getStats() {
+        return [
+            'pending' => $this->countByStatus('pending'),
+            'diizinkan' => $this->countByStatus('diizinkan'),
+            'ditolak' => $this->countByStatus('ditolak'),
+        ];
     }
-
-    public function deleteBySiswa($id_siswa){
-        $id = (int)$id_siswa;
-        return $this->db->query("DELETE FROM tb_izin WHERE id_siswa=$id");
-    }
-
-    public function getAllWithSiswa($filterStatus = null, $qname = null){
-        $where = [];
-        if ($filterStatus) $where[] = "tb_izin.status='" . $this->db->real_escape_string($filterStatus) . "'";
-        if ($qname) $where[] = "siswa.nama_siswa LIKE '%" . $this->db->real_escape_string($qname) . "%'";
-        
-        $sql = "SELECT tb_izin.*, siswa.nama_siswa, siswa.kelas 
-                FROM tb_izin 
-                JOIN siswa ON tb_izin.id_siswa = siswa.id_siswa";
-        if (count($where)) $sql .= " WHERE " . implode(" AND ", $where);
-        $sql .= " ORDER BY tb_izin.id_izin DESC";
-
-        $res = $this->db->query($sql);
-        return $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
-    }
-
-    public function getById($id_izin){
-        $id_izin = (int)$id_izin;
-        $q = $this->db->query("SELECT * FROM tb_izin WHERE id_izin = $id_izin");
-        return $q ? $q->fetch_assoc() : null;
-    }
-
-    // Fungsi untuk update izin 
-    public function updateIzin($id_izin, $keperluan, $keluar, $kembali) {
-        $id_izin = (int)$id_izin;
-        $keperluan = $this->db->real_escape_string($keperluan);
-        $keluar = $this->db->real_escape_string($keluar);
-        $kembali = $this->db->real_escape_string($kembali);
-    
-        // Query untuk update data izin dengan id_izin tertentu
-        $query = "UPDATE tb_izin SET keperluan='$keperluan', rencana_keluar='$keluar', rencana_kembali='$kembali' WHERE id_izin=$id_izin AND status='pending'";
-    
-        return $this->db->query($query);
-    }
-
 }
 ?>

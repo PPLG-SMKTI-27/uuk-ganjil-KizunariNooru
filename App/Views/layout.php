@@ -1,9 +1,4 @@
 <?php
-// Start session if not already started
-if (!isset($_SESSION)) {
-    session_start();
-}
-
 // Retrieve and clear flash message from session
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
@@ -29,12 +24,12 @@ unset($_SESSION['flash']);
                 <!-- Role-based Navigation Links -->
                 <?php if (isset($_SESSION['user'])): ?>
                     <?php if ($_SESSION['user']['role'] === 'Siswa'): ?>
-                        <a href="<?= BASE_URL ?>?c=siswa&m=dashboard" class="text-sm text-gray-600 hover:text-gray-800">Dashboard</a>
-                        <a href="<?= BASE_URL ?>?c=siswa&m=index" class="text-sm text-gray-600 hover:text-gray-800">Izin Saya</a>
+                        <a href="<?= BASE_URL ?>index.php?action=siswa.dashboard" class="text-sm text-gray-600 hover:text-gray-800">Dashboard</a>
+                        <a href="<?= BASE_URL ?>index.php?action=siswa.history" class="text-sm text-gray-600 hover:text-gray-800">Riwayat Izin</a>
                     <?php elseif ($_SESSION['user']['role'] === 'WaliKelas'): ?>
-                        <a href="<?= BASE_URL ?>?c=wali&m=index" class="text-sm text-gray-600 hover:text-gray-800">Daftar Izin</a>
+                        <a href="<?= BASE_URL ?>index.php?action=wali.index" class="text-sm text-gray-600 hover:text-gray-800">Daftar Izin</a>
                     <?php elseif ($_SESSION['user']['role'] === 'Admin'): ?>
-                        <a href="<?= BASE_URL ?>?c=admin&m=index" class="text-sm text-gray-600 hover:text-gray-800">Manajemen User</a>
+                        <a href="<?= BASE_URL ?>index.php?action=admin.index" class="text-sm text-gray-600 hover:text-gray-800">Manajemen User</a>
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
@@ -45,11 +40,11 @@ unset($_SESSION['flash']);
                     <span class="text-sm text-gray-700 mr-3">
                         <?= htmlspecialchars($_SESSION['user']['email']) ?>
                     </span>
-                    <a href="<?= BASE_URL ?>?c=auth&m=logout" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition duration-200">
+                    <a href="<?= BASE_URL ?>index.php?action=auth.logout" class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition duration-200">
                         Logout
                     </a>
                 <?php else: ?>
-                    <a href="<?= BASE_URL ?>?c=auth&m=loginView" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition duration-200">
+                    <a href="<?= BASE_URL ?>index.php?action=auth.login" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition duration-200">
                         Login
                     </a>
                 <?php endif; ?>

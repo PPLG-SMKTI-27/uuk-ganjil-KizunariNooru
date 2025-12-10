@@ -1,100 +1,197 @@
 <?php
+/**
+ * User Model
+ * Mengelola operasi user dengan keamanan tinggi (prepared statements, bcrypt)
+ */
+
 require_once __DIR__ . '/../Config/Database.php';
+require_once __DIR__ . '/../Helpers/Validator.php';
+require_once __DIR__ . '/../Helpers/Sanitizer.php';
 
 class User {
     private $db;
 
     public function __construct() {
-        $this->db = Database::connect();
+        $this->db = Database::getInstance();
     }
 
-    public function findByEmail($email) {
-        $e = $this->db->real_escape_string($email);
-        $stmt = $this->db->prepare("SELECT * FROM user WHERE email = ? LIMIT 1");
-        $stmt->bind_param("s", $e);
-        $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
-    }
-
-    public function verifyLogin($email, $password) {
-        $u = $this->findByEmail($email);
-        if (!$u) return null;
-        return password_verify($password, $u['password']) ? $u : null;
-    }
-
-    public function getAll() {
-        return $this->db->query("SELECT * FROM user");
-    }
-
-    public function create($email, $password, $role) {
-        $e = $this->db->real_escape_string($email);
-        $pw = password_hash($password, PASSWORD_DEFAULT);
-        $r = $this->db->prepare("INSERT INTO user (email, password, role) VALUES (?, ?, ?)");
-        $r->bind_param("sss", $e, $pw, $role);
-        return $r->execute() ? $this->db->insert_id : false;
-    }
-
-    public function updatePassword($id, $password) {
-        $id = (int)$id;
-        $pw = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $this->db->prepare("UPDATE user SET password = ? WHERE id_user = ?");
-        $stmt->bind_param("si", $pw, $id);
-        return $stmt->execute();
-    }
-
-    public function delete($id) {
-        $id = (int)$id;
-        $stmt = $this->db->prepare("DELETE FROM user WHERE id_user = ?");
-        $stmt->bind_param("i", $id);
-        return $stmt->execute();
-    }
-
+    /**
+     * Find user by ID
+     */
     public function find($id) {
-        $id = (int)$id;
-        $stmt = $this->db->prepare("SELECT * FROM user WHERE id_user = ? LIMIT 1");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $sql = "SELECT id_user, email, role FROM user WHERE id_user = ? LIMIT 1";
+        return $this->db->fetchOne($sql, [(int)$id], 'i');
     }
 
-    public function updateUser($id, $email, $role, $password = null) {
-        $email = $this->db->real_escape_string($email);
-        $role = $this->db->real_escape_string($role);
+    /**
+     * Find user by email
+     */
+    public function findByEmail($email) {
+        $sql = "SELECT id_user, email, password, role FROM user WHERE email = ? LIMIT 1";
+        return $this->db->fetchOne($sql, [$email], 's');
+    }
 
-        $sql = "UPDATE user SET email = ?, role = ?";
-
-        if ($password) {
-            $pw = password_hash($password, PASSWORD_DEFAULT);
-            $sql .= ", password = ?";
+    /**
+     * Verify login credentials
+     */
+    public function verifyLogin($email, $password) {
+        if (!Validator::email($email)) {
+            return null;
         }
 
-        $sql .= " WHERE id_user = ?";
+        $user = $this->findByEmail($email);
+        if (!$user) {
+            return null;
+        }
 
-        $stmt = $this->db->prepare($sql);
-        if ($password) {
-            $stmt->bind_param("sssi", $email, $role, $pw, $id);
+        if (!Sanitizer::verifyPassword($password, $user['password'])) {
+            return null;
+        }
+
+        // Return user tanpa password
+        unset($user['password']);
+        return $user;
+    }
+
+    /**
+     * Get all users (untuk admin)
+     */
+    public function getAll() {
+        $sql = "SELECT u.id_user, u.email, u.role FROM user u ORDER BY u.id_user DESC";
+        return $this->db->fetchAll($sql);
+    }
+
+    /**
+     * Get users by role
+     */
+    public function getByRole($role) {
+        $sql = "SELECT id_user, email, role FROM user WHERE role = ? ORDER BY id_user DESC";
+        return $this->db->fetchAll($sql, [$role], 's');
+    }
+
+    /**
+     * Count users by role
+     */
+    public function countByRole($role = null) {
+        if ($role === null) {
+            // Count all users
+            $sql = "SELECT COUNT(*) as total FROM user";
+            $result = $this->db->fetchOne($sql);
         } else {
-            $stmt->bind_param("ssi", $email, $role, $id);
+            // Count by specific role
+            $sql = "SELECT COUNT(*) as total FROM user WHERE role = ?";
+            $result = $this->db->fetchOne($sql, [$role], 's');
+        }
+        return (int)($result['total'] ?? 0);
+    }
+
+    /**
+     * Create new user
+     */
+    public function create($email, $password, $role) {
+        // Validasi
+        if (!Validator::email($email)) {
+            Validator::addError('email', 'Format email tidak valid');
+            return false;
         }
 
-        return $stmt->execute();
+        if (strlen($password) < 6) {
+            Validator::addError('password', 'Password minimal 6 karakter');
+            return false;
+        }
+
+        // Cek email sudah ada
+        if ($this->findByEmail($email)) {
+            Validator::addError('email', 'Email sudah terdaftar');
+            return false;
+        }
+
+        // Hash password dengan bcrypt
+        $hashedPassword = Sanitizer::password($password);
+
+        // Insert ke database
+        $sql = "INSERT INTO user (email, password, role) VALUES (?, ?, ?)";
+        $this->db->query($sql, [$email, $hashedPassword, $role], 'sss');
+
+        if ($this->db->affectedRows() > 0) {
+            return $this->db->lastInsertId();
+        }
+
+        return false;
     }
 
-    public function deleteUser(){
-        $id = (int)($_GET['id'] ?? 0);
-    
-        // Hapus data siswa yang terkait
-        $s = new Siswa();
-        $s->deleteByUserId($id);
-    
-        // Hapus user setelah siswa
-        $u = new User();
-        $u->delete($id);
-    
-        $_SESSION['flash'] = ['type'=>'success','msg'=>'User dan data terkait dihapus'];
-        header('Location: ../Public/index.php?c=admin&m=index');
+    /**
+     * Update user
+     */
+    public function update($id, $email = null, $password = null, $role = null) {
+        $updates = [];
+        $params = [];
+        $types = '';
+
+        if ($email !== null) {
+            // Cek email belum digunakan user lain
+            $existing = $this->db->fetchOne(
+                "SELECT id_user FROM user WHERE email = ? AND id_user != ?",
+                [$email, (int)$id],
+                'si'
+            );
+
+            if ($existing) {
+                Validator::addError('email', 'Email sudah digunakan user lain');
+                return false;
+            }
+
+            $updates[] = "email = ?";
+            $params[] = $email;
+            $types .= 's';
+        }
+
+        if ($password !== null && strlen($password) >= 6) {
+            $hashedPassword = Sanitizer::password($password);
+            $updates[] = "password = ?";
+            $params[] = $hashedPassword;
+            $types .= 's';
+        }
+
+        if ($role !== null) {
+            $updates[] = "role = ?";
+            $params[] = $role;
+            $types .= 's';
+        }
+
+        if (empty($updates)) {
+            return false;
+        }
+
+        $params[] = (int)$id;
+        $types .= 'i';
+
+        $sql = "UPDATE user SET " . implode(', ', $updates) . " WHERE id_user = ?";
+        $this->db->query($sql, $params, $types);
+
+        return $this->db->affectedRows() > 0;
     }
 
+    /**
+     * Delete user
+     */
+    public function delete($id) {
+        $sql = "DELETE FROM user WHERE id_user = ?";
+        $this->db->query($sql, [(int)$id], 'i');
+        return $this->db->affectedRows() > 0;
+    }
 
+    /**
+     * Update password
+     */
+    public function updatePassword($id, $newPassword) {
+        if (strlen($newPassword) < 6) {
+            Validator::addError('password', 'Password minimal 6 karakter');
+            return false;
+        }
+
+        $hashedPassword = Sanitizer::password($newPassword);
+        return $this->update((int)$id, null, $newPassword, null);
+    }
 }
 ?>

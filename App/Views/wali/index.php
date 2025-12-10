@@ -2,9 +2,8 @@
 <div class="bg-white p-6 rounded-lg shadow-lg max-w-7xl mx-auto">
   <!-- Filter Section -->
   <div class="flex flex-wrap gap-4 mb-6">
-    <form method="get" class="flex flex-wrap gap-4 items-center w-full">
-      <input type="hidden" name="c" value="wali">
-      <input type="hidden" name="m" value="index">
+    <form method="get" action="<?= BASE_URL ?>index.php" class="flex flex-wrap gap-4 items-center w-full">
+      <input type="hidden" name="action" value="wali.index">
 
       <!-- Dropdown Status -->
       <select name="status" class="p-2 border rounded-lg text-gray-700 w-48">
@@ -39,7 +38,7 @@
         </tr>
       </thead>
       <tbody>
-        <?php $no = 1; foreach($data as $d): ?>
+        <?php $no = 1; $data = $data ?? []; foreach($data as $d): ?>
         <tr class="border-t border-gray-200 hover:bg-gray-50 transition duration-150">
           <td class="p-3 text-sm"><?= $no++ ?></td>
           <td class="p-3 text-sm"><?= htmlspecialchars($d['nama_siswa']) ?></td>

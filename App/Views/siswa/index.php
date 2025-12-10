@@ -3,12 +3,12 @@
 <div class="bg-white p-6 rounded-lg shadow-lg">
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-2xl font-semibold text-gray-800">Daftar Izin Saya</h2>
-    <a href="<?= BASE_URL ?>?c=siswa&m=create" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-300">
+    <a href="<?= BASE_URL ?>index.php?action=siswa.create" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-300">
       + Tambah Izin
     </a>
   </div>
 
-  <!-- Tabel Daftar Izin -->
+  <!-- Tabel Daftar Izin -->  
   <div class="overflow-x-auto bg-white shadow-md rounded-lg">
     <table class="w-full text-left table-auto">
       <thead class="bg-gray-100">
@@ -22,7 +22,7 @@
         </tr>
       </thead>
       <tbody>
-        <?php $no=1; foreach($data as $d): ?>
+        <?php $no=1; $data = $data ?? []; foreach($data as $d): ?>
         <tr class="border-t hover:bg-gray-50 transition-colors">
           <td class="p-3"><?= $no++ ?></td>
           <td class="p-3"><?= htmlspecialchars($d['keperluan']) ?></td>

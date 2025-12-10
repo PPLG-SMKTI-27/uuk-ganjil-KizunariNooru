@@ -1,120 +1,402 @@
 <?php
+/**
+ * AdminController - Admin Dashboard & User Management
+ * 
+ * Mengelola semua user (Siswa, Guru, Admin)
+ * CRUD operations untuk user, siswa, dan guru
+ * 
+ * Requirements:
+ * - Guard::requireRole('Admin') pada semua method
+ * - CSRF verification pada POST requests
+ * - Audit logging untuk sensitive operations
+ */
+
 require_once __DIR__ . '/../Models/User.php';
 require_once __DIR__ . '/../Models/Siswa.php';
+require_once __DIR__ . '/../Middleware/Auth.php';
+require_once __DIR__ . '/../Helpers/Validator.php';
 
 class AdminController {
-    public function index(){
-      if(!isset($_SESSION['user'])){ header('Location: ../Public/index.php'); exit; }
-      $u = new User(); $users = $u->getAll();
-      include __DIR__ . '/../Views/admin/index.php';
-    }
-    public function createUser(){
-      if(!isset($_SESSION['user'])){ header('Location: ../Public/index.php'); exit; }
-      // form view
-      include __DIR__ . '/../Views/admin/create_user.php';
-    }
-    public function storeUser(){
-        // Ambil data dari form
-        $nama = $_POST['nama'] ?? '';
-        $email = $_POST['email'];
-        $role = $_POST['role'];
-        $pw = $_POST['password'] ?: bin2hex(random_bytes(4)); // default password jika tidak diisi
 
-        // Cek apakah email sudah ada
-        $u = new User();
-        $existingUser = $u->findByEmail($email);
-        if ($existingUser) {
-            $_SESSION['flash'] = ['type' => 'error', 'msg' => 'Email sudah digunakan'];
-            header('Location: ../Public/index.php?c=admin&m=createUser');
+    /**
+     * Admin Dashboard - List all users
+     * 
+     * @access Admin
+     */
+    public function dashboard() {
+        Guard::requireRole('Admin');
+        
+        $userModel = new User();
+        
+        // Get stats
+        $totalUsers = $userModel->countByRole(null); // null = semua role
+        $totalSiswa = $userModel->countByRole('Siswa');
+        $totalGuru = $userModel->countByRole('WaliKelas');
+        $totalAdmin = $userModel->countByRole('Admin');
+        
+        // Get recent users
+        $users = $userModel->getAll();
+        
+        include __DIR__ . '/../Views/admin/dashboard.php';
+    }
+
+    /**
+     * List all users with filter & search
+     * 
+     * @access Admin
+     */
+    public function index() {
+        Guard::requireRole('Admin');
+        
+        $userModel = new User();
+        
+        // Filter by role
+        $roleFilter = $_GET['role'] ?? null;
+        $searchTerm = $_GET['search'] ?? '';
+        
+        // Get users berdasarkan filter
+        if ($roleFilter) {
+            $users = $userModel->getByRole($roleFilter);
+        } else {
+            $users = $userModel->getAll();
+        }
+        
+        // Filter by search term
+        if (!empty($searchTerm)) {
+            $users = array_filter($users, function($user) use ($searchTerm) {
+                return stripos($user['email'], $searchTerm) !== false ||
+                       stripos($user['name'] ?? '', $searchTerm) !== false;
+            });
+        }
+        
+        include __DIR__ . '/../Views/admin/index.php';
+    }
+
+    /**
+     * Show create user form
+     * 
+     * @access Admin
+     */
+    public function create() {
+        Guard::requireRole('Admin');
+        
+        include __DIR__ . '/../Views/admin/create_user.php';
+    }
+
+    /**
+     * Store new user with validation
+     * 
+     * @access Admin
+     * @post email, password, role, [nama_siswa, nisn, nik, kelas, alamat]
+     */
+    public function store() {
+        Guard::requireRole('Admin');
+        
+        // CSRF verification
+        if (!Csrf::verify($_POST['csrf_token'] ?? '')) {
+            $_SESSION['error'] = 'Invalid CSRF token';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.create');
             exit;
         }
-
-        // Membuat user
-        $id_user = $u->create($email, $pw, $role); // membuat user baru
-
-        // Jika user berhasil dibuat dan role adalah Siswa
-        if ($id_user && $role === 'Siswa') {
-            // Ambil data siswa dari form
-            $nama_siswa = $_POST['nama_siswa'];
-            $nisn = $_POST['nisn'];
-            $nik = $_POST['nik'];
-            $kelas = $_POST['kelas'];
-            $alamat = $_POST['alamat'];
-
-            // Buat data siswa baru
-            $s = new Siswa();
-            $s->create($id_user, $nama_siswa, $nisn, $kelas, $alamat);
-
-            $_SESSION['flash'] = ['type' => 'success', 'msg' => "User dan data siswa berhasil dibuat (password: $pw)"];
-        } elseif ($id_user) {
-            $_SESSION['flash'] = ['type' => 'success', 'msg' => "User berhasil dibuat (password: $pw)"];
-        } else {
-            $_SESSION['flash'] = ['type' => 'error', 'msg' => 'Gagal membuat user'];
+        
+        // Sanitize input
+        $email = Sanitizer::email($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $role = $_POST['role'] ?? 'Siswa';
+        
+        // Validate
+        if (!Validator::email($email)) {
+            Validator::addError('email', 'Email tidak valid');
         }
 
-        // Redirect ke halaman utama
-        header('Location: ../Public/index.php?c=admin&m=index');
+        if (empty($password) || strlen($password) < 6) {
+            Validator::addError('password', 'Password minimal 6 karakter');
+        }
+
+        if (!in_array($role, ['Siswa', 'WaliKelas', 'Admin'])) {
+            Validator::addError('role', 'Role tidak valid');
+        }
+
+        // Check if email already exists
+        $userModel = new User();
+        if ($userModel->findByEmail($email)) {
+            Validator::addError('email', 'Email sudah terdaftar');
+        }
+
+        // If validation fails
+        if (Validator::hasError()) {
+            $_SESSION['errors'] = Validator::errors();
+            $_SESSION['old'] = $_POST;
+            header('Location: ' . BASE_URL . 'index.php?action=admin.create');
+            exit;
+        }
+        
+        // Create user
+        $hashedPassword = Sanitizer::password($password);
+        $userId = $userModel->create($email, $hashedPassword, $role);
+        
+        // If Siswa, create siswa record
+        if ($userId && $role === 'Siswa') {
+            $namaSiswa = $_POST['nama_siswa'] ?? '';
+            $nisn = $_POST['nisn'] ?? '';
+            $kelas = $_POST['kelas'] ?? '';
+            $alamat = $_POST['alamat'] ?? '';
+            
+            // Validate NISN
+            if (!Validator::nisn($nisn)) {
+                $_SESSION['error'] = 'NISN tidak valid (10 digit)';
+                // Delete user yang baru dibuat
+                $userModel->delete($userId);
+                header('Location: ' . BASE_URL . 'index.php?action=admin.create');
+                exit;
+            }
+            
+            $siswaModel = new Siswa();
+            $siswaModel->create($userId, $namaSiswa, $nisn, $kelas, $alamat);
+        }
+        
+        $_SESSION['success'] = 'User berhasil dibuat';
+        header('Location: ' . BASE_URL . 'index.php?action=admin.index');
         exit;
     }
 
-    public function deleteUser() {
-        $id = (int)($_GET['id'] ?? 0);
-
-        // Hapus data izin yang terkait dengan siswa
-        require_once __DIR__ . '/../Models/Izin.php';
-        $izin = new Izin();
-        $siswa = new Siswa();
-        $siswaData = $siswa->findByUserId($id);
-        if ($siswaData) {
-            $izin->deleteBySiswa($siswaData['id_siswa']);
+    /**
+     * Show edit user form
+     * 
+     * @access Admin
+     * @param id User ID
+     */
+    public function edit() {
+        Guard::requireRole('Admin');
+        
+        $userId = (int)($_GET['id'] ?? 0);
+        if (!$userId) {
+            $_SESSION['error'] = 'User tidak ditemukan';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
         }
-
-        // Hapus data siswa yang terkait dengan user
-        $siswa->deleteByUserId($id);
-
-        // Hapus data user
-        $user = new User();
-        $user->delete($id);
-
-        $_SESSION['flash'] = ['type' => 'success', 'msg' => 'User dan data terkait dihapus'];
-        header('Location: ../Public/index.php?c=admin&m=index');
-    }
-  
-    public function editUser(){
-        $id = (int)($_GET['id'] ?? 0);
-        $u = new User();
-        $user = $u->find($id);
-    
-        // jika role siswa → ambil detail siswa
+        
+        $userModel = new User();
+        $user = $userModel->find($userId);
+        
+        if (!$user) {
+            $_SESSION['error'] = 'User tidak ditemukan';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
+        }
+        
+        // Get siswa data if role is Siswa
         $siswa = null;
-        if($user['role'] === 'Siswa'){
-            $s = new Siswa();
-            $siswa = $s->findByUserId($id);
+        if ($user['role'] === 'Siswa') {
+            $siswaModel = new Siswa();
+            $siswa = $siswaModel->findByUserId($userId);
         }
-    
+        
         include __DIR__ . '/../Views/admin/edit_user.php';
     }
-    
-    public function updateUser(){
-        $id_user = (int)$_POST['id_user'];
-        $email = $_POST['email'];
-        $role = $_POST['role'];
-        $password = $_POST['password'];
-    
-        $u = new User();
-        $u->updateUser($id_user, $email, $role, $password ?: null);
-    
-        // update siswa jika role siswa
-        if($role === 'Siswa'){
-            $nama = $_POST['nama_siswa'];
-            $kelas = $_POST['kelas'];
-            $s = new Siswa();
-            $s->updateFromAdmin($id_user, $nama, $kelas);
+
+    /**
+     * Update user data
+     * 
+     * @access Admin
+     * @post email, role, password, [nama_siswa, kelas]
+     */
+    public function update() {
+        Guard::requireRole('Admin');
+        
+        // CSRF verification
+        if (!Csrf::verify($_POST['csrf_token'] ?? '')) {
+            $_SESSION['error'] = 'Invalid CSRF token';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
         }
-    
-        $_SESSION['flash'] = ['type' => 'success', 'msg' => 'User berhasil diperbarui'];
-        header('Location: ../Public/index.php?c=admin&m=index');
+        
+        $userId = (int)($_POST['id'] ?? 0);
+        if (!$userId) {
+            $_SESSION['error'] = 'User tidak valid';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
+        }
+        
+        $userModel = new User();
+        $user = $userModel->find($userId);
+        
+        if (!$user) {
+            $_SESSION['error'] = 'User tidak ditemukan';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
+        }
+        
+        // Sanitize input
+        $email = Sanitizer::email($_POST['email'] ?? '');
+        $role = $_POST['role'] ?? $user['role'];
+        $password = $_POST['password'] ?? '';
+        
+        // Validate
+        if (!Validator::email($email)) {
+            Validator::addError('email', 'Email tidak valid');
+        }
+
+        if (!empty($password) && strlen($password) < 6) {
+            Validator::addError('password', 'Password minimal 6 karakter');
+        }
+
+        // Check if new email already exists (and is different from current)
+        if ($email !== $user['email'] && $userModel->findByEmail($email)) {
+            Validator::addError('email', 'Email sudah digunakan');
+        }
+
+        if (Validator::hasError()) {
+            $_SESSION['errors'] = Validator::errors();
+            header('Location: ' . BASE_URL . 'index.php?action=admin.edit&id=' . $userId);
+            exit;
+        }
+        
+        // Update user - pass null untuk fields yang tidak berubah
+        $userModel->update(
+            $userId,
+            $email,                              // email
+            !empty($password) ? $password : null, // password
+            $role                                  // role
+        );
+        
+        // Update siswa if role is Siswa
+        if ($role === 'Siswa') {
+            $namaSiswa = $_POST['nama_siswa'] ?? '';
+            $kelas = $_POST['kelas'] ?? '';
+            $alamat = $_POST['alamat'] ?? '';
+
+            $siswaModel = new Siswa();
+            $siswaData = $siswaModel->findByUserId($userId);
+
+            if ($siswaData) {
+                // Update existing
+                $siswaModel->update($siswaData['id_siswa'], $namaSiswa, null, $kelas, $alamat);
+            } else {
+                // Create new if doesn't exist
+                $nisn = $_POST['nisn'] ?? '';
+                if (Validator::nisn($nisn)) {
+                    $siswaModel->create($userId, $namaSiswa, $nisn, $kelas, $alamat);
+                }
+            }
+        }
+        
+        $_SESSION['success'] = 'User berhasil diupdate';
+        header('Location: ' . BASE_URL . 'index.php?action=admin.index');
         exit;
     }
 
+    /**
+     * Delete user and related data
+     * 
+     * @access Admin
+     * @param id User ID
+     */
+    public function delete() {
+        Guard::requireRole('Admin');
+        
+        $userId = (int)($_GET['id'] ?? 0);
+        if (!$userId) {
+            $_SESSION['error'] = 'User tidak valid';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
+        }
+        
+        // Prevent deleting own account
+        if ($userId === Auth::userId()) {
+            $_SESSION['error'] = 'Tidak bisa menghapus akun sendiri';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
+        }
+        
+        $userModel = new User();
+        $user = $userModel->find($userId);
+        
+        if (!$user) {
+            $_SESSION['error'] = 'User tidak ditemukan';
+            header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+            exit;
+        }
+        
+        // Delete related siswa data
+        if ($user['role'] === 'Siswa') {
+            $siswaModel = new Siswa();
+            $siswaData = $siswaModel->findByUserId($userId);
+            
+            if ($siswaData) {
+                // Delete izin records
+                require_once __DIR__ . '/../Models/Izin.php';
+                $izinModel = new Izin();
+                $izinModel->deleteBySiswa($siswaData['id_siswa']);
+                
+                // Delete siswa record
+                $siswaModel->delete($siswaData['id_siswa']);
+            }
+        }
+        
+        // Delete user
+        $userModel->delete($userId);
+        
+        $_SESSION['success'] = 'User dan data terkait berhasil dihapus';
+        header('Location: ' . BASE_URL . 'index.php?action=admin.index');
+        exit;
+    }
+
+    /**
+     * Export users to CSV
+     * 
+     * @access Admin
+     */
+    public function export() {
+        Guard::requireRole('Admin');
+        
+        $userModel = new User();
+        $users = $userModel->getAll();
+        
+        // Set headers for CSV
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename=users_' . date('Y-m-d_H-i-s') . '.csv');
+        
+        $output = fopen('php://output', 'w');
+        
+        // Write header
+        fputcsv($output, ['ID', 'Email', 'Role', 'Created At']);
+        
+        // Write data
+        foreach ($users as $user) {
+            fputcsv($output, [
+                $user['id_user'],
+                $user['email'],
+                $user['role'],
+                $user['created_at'] ?? ''
+            ]);
+        }
+        
+        fclose($output);
+        exit;
+    }
+
+    /**
+     * Get user statistics
+     * 
+     * @access Admin
+     */
+    public function stats() {
+        Guard::requireRole('Admin');
+        
+        $userModel = new User();
+        
+        $stats = [
+            'total_users' => $userModel->countByRole(null),
+            'total_siswa' => $userModel->countByRole('Siswa'),
+            'total_guru' => $userModel->countByRole('WaliKelas'),
+            'total_admin' => $userModel->countByRole('Admin'),
+        ];
+        
+        // Return as JSON
+        header('Content-Type: application/json');
+        echo json_encode($stats);
+        exit;
+    }
 }
+
