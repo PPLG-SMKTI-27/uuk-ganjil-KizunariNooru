@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@tailwindcss/cli": "^4.1.17",
+    "@tailwindcss/vite": "^4.1.17",
+    "tailwindcss": "^4.1.17"
+  },
+  "name": "uuk_fahri_noor_royyan_ganjil",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "npm run tailwind:dev",
+    "build": "npm run tailwind:build",
+    "tailwind:dev": "tailwindcss -i ./Public/css/input.css -o ./Public/css/output.css --watch",
+    "tailwind:build": "tailwindcss -i ./Public/css/input.css -o ./Public/css/output.css --minify"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

@@ -1,0 +1,104 @@
+# Apache Configuration untuk SISWA IZIN SYSTEM
+
+# ===== SECURITY =====
+
+# Disable directory listing
+Options -Indexes
+
+# Prevent access to sensitive files
+<FilesMatch "\.(env|sql|json|config|yml|yaml|lock)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Prevent access to hidden files & folders
+<FilesMatch "^\.|^#.*#|~$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# ===== HEADERS =====
+
+# Security headers
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-XSS-Protection "1; mode=block"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header set Server "SIS/1.0"
+
+# Prevent MIME type sniffing
+<FilesMatch "\.(jpg|jpeg|png|gif|pdf|css|js|ico)$">
+    Header set X-Content-Type-Options "nosniff"
+</FilesMatch>
+
+# ===== COMPRESSION =====
+
+# Enable gzip compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml
+    AddOutputFilterByType DEFLATE text/css text/javascript
+    AddOutputFilterByType DEFLATE application/javascript application/json
+</IfModule>
+
+# ===== CACHING =====
+
+# Browser caching for static files
+<FilesMatch "\.(jpg|jpeg|png|gif|ico|css|js|woff|woff2)$">
+    Header set Cache-Control "max-age=31536000, public"
+</FilesMatch>
+
+# Don't cache HTML
+<FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "max-age=3600, must-revalidate"
+</FilesMatch>
+
+# ===== URL REWRITING =====
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Remove trailing slash (optional)
+    # RewriteCond %{REQUEST_FILENAME} !-d
+    # RewriteRule ^(.+)/$ /$1 [L,R=301]
+    
+    # Block access to App folder
+    RewriteRule ^App/ - [F,L]
+    RewriteRule ^\.env$ - [F,L]
+    RewriteRule ^\.git/ - [F,L]
+    
+    # Redirect to index.php for all requests
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# ===== PHP SETTINGS =====
+
+# Set PHP configuration if allowed
+<IfModule mod_php.c>
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_value error_log /var/log/php-error.log
+    php_value post_max_size 50M
+    php_value upload_max_filesize 50M
+    php_value max_input_vars 5000
+    php_flag short_open_tag Off
+    php_value default_charset "UTF-8"
+</IfModule>
+
+# ===== ACCESS CONTROL =====
+
+# Allow all by default
+Order allow,deny
+Allow from all
+
+# Block suspicious user agents
+RewriteEngine On
+RewriteCond %{HTTP_USER_AGENT} (bot|crawler|spider|scraper) [NC]
+RewriteRule ^(.*)$ - [F,L]
+
+# Block SQL injection attempts
+RewriteCond %{QUERY_STRING} (\<|%3C).*script.*(\>|%3E) [NC,OR]
+RewriteCond %{QUERY_STRING} UNION.*SELECT [NC,OR]
+RewriteCond %{QUERY_STRING} INSERT.*INTO [NC]
+RewriteRule ^(.*)$ - [F,L]
