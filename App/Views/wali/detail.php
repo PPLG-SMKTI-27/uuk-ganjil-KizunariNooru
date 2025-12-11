@@ -112,7 +112,7 @@
 
     <!-- Tombol Kembali -->
     <div class="mt-4">
-        <a href="<?= BASE_URL ?>?c=wali&m=index" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200">
+        <a href="<?= BASE_URL ?>index.php?action=wali.index" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200">
             Kembali ke Daftar Izin
         </a>
     </div>

@@ -93,11 +93,11 @@ ob_start();
                         <tbody>
                             <?php foreach (array_slice($izinList, 0, 5) as $izin): ?>
                                 <tr class="border-b">
-                                    <td class="px-4 py-2"><?= date('d M Y', strtotime($izin['rencana_keluar'])) ?></td>
+                                    <td class="px-4 py-2"><?= date('d M Y H:i', strtotime($izin['rencana_keluar'])) ?></td>
                                     <td class="px-4 py-2"><?= htmlspecialchars(substr($izin['keperluan'], 0, 20)) ?>...</td>
                                     <td class="px-4 py-2">
-                                        <?= date('d M', strtotime($izin['rencana_keluar'])) ?> -
-                                        <?= date('d M', strtotime($izin['rencana_kembali'])) ?>
+                                        <?= date('d M H:i', strtotime($izin['rencana_keluar'])) ?> -
+                                        <?= date('d M H:i', strtotime($izin['rencana_kembali'])) ?>
                                     </td>
                                     <td class="px-4 py-2">
                                         <?php

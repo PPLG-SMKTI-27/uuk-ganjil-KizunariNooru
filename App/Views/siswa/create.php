@@ -89,31 +89,33 @@ if (isset($_SESSION['form_errors'])) unset($_SESSION['form_errors']);
                             <?php endif; ?>
                         </div>
 
-                        <!-- Tanggal Mulai -->
+                        <!-- Tanggal & Jam Keluar -->
                         <div class="form-group">
-                            <label for="rencana_keluar">Tanggal Mulai *</label>
+                            <label for="rencana_keluar">Tanggal & Jam Keluar *</label>
                             <input
-                                type="date"
+                                type="datetime-local"
                                 id="rencana_keluar"
                                 name="rencana_keluar"
                                 class="<?= isset($errors['rencana_keluar']) ? 'form-error' : '' ?>"
                                 required
                             />
+                            <small>Format: DD/MM/YYYY HH:MM</small>
                             <?php if (isset($errors['rencana_keluar'])): ?>
                                 <span class="error-message"><?= htmlspecialchars($errors['rencana_keluar']) ?></span>
                             <?php endif; ?>
                         </div>
 
-                        <!-- Tanggal Akhir -->
+                        <!-- Tanggal & Jam Kembali -->
                         <div class="form-group">
-                            <label for="rencana_kembali">Tanggal Akhir *</label>
+                            <label for="rencana_kembali">Tanggal & Jam Kembali *</label>
                             <input
-                                type="date"
+                                type="datetime-local"
                                 id="rencana_kembali"
                                 name="rencana_kembali"
                                 class="<?= isset($errors['rencana_kembali']) ? 'form-error' : '' ?>"
                                 required
                             />
+                            <small>Format: DD/MM/YYYY HH:MM</small>
                             <?php if (isset($errors['rencana_kembali'])): ?>
                                 <span class="error-message"><?= htmlspecialchars($errors['rencana_kembali']) ?></span>
                             <?php endif; ?>

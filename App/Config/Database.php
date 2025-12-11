@@ -9,6 +9,8 @@ require_once __DIR__ . '/config.php';
 class Database {
     private static $instance = null;
     private $connection = null;
+    private $lastAffectedRows = 0;
+    private $lastInsertId = 0;
 
     private function __construct() {
         $this->connect();
@@ -61,7 +63,7 @@ class Database {
     public function query($sql, $params = [], $types = '') {
         $stmt = $this->connection->prepare($sql);
         if (!$stmt) {
-            throw new Exception('Prepare Error: ' . $this->connection->error);
+            throw new Exception('Prepare Error: ' . $this->connection->error . ' SQL: ' . $sql);
         }
 
         if (!empty($params)) {
@@ -72,7 +74,17 @@ class Database {
             $stmt->bind_param($types, ...$params);
         }
 
-        $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok === false) {
+            $err = $stmt->error ?: $this->connection->error;
+            error_log('Database Execute Error: ' . $err . ' SQL: ' . $sql);
+            throw new Exception('Execute Error: ' . $err . ' SQL: ' . $sql);
+        }
+
+        // Store affected rows and insert ID immediately after execute
+        $this->lastAffectedRows = $this->connection->affected_rows;
+        $this->lastInsertId = $this->connection->insert_id;
+
         return $stmt;
     }
 
@@ -96,14 +108,14 @@ class Database {
      * Get last insert ID
      */
     public function lastInsertId() {
-        return $this->connection->insert_id;
+        return $this->lastInsertId;
     }
 
     /**
      * Get affected rows
      */
     public function affectedRows() {
-        return $this->connection->affected_rows;
+        return $this->lastAffectedRows;
     }
 
     /**

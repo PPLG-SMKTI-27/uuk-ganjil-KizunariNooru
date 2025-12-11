@@ -39,13 +39,13 @@
           </td>
           <td class="p-3">
             <?php if($d['status']=='pending'): ?>
-              <a href="<?= BASE_URL ?>?c=siswa&m=delete&id=<?= $d['id_izin'] ?>" class="text-red-600 hover:text-red-700" onclick="return confirm('Hapus izin ini?')">
+              <a href="<?= BASE_URL ?>index.php?action=siswa.delete&id=<?= $d['id_izin'] ?>" class="text-red-600 hover:text-red-700" onclick="return confirm('Hapus izin ini?')">
                 <svg class="w-5 h-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
                 Hapus
               </a>
-              <a href="<?= BASE_URL ?>?c=siswa&m=edit&id=<?= $d['id_izin'] ?>" class="text-blue-600 hover:text-blue-700 ml-2">
+              <a href="<?= BASE_URL ?>index.php?action=siswa.edit&id=<?= $d['id_izin'] ?>" class="text-blue-600 hover:text-blue-700 ml-2">
                 <svg class="w-5 h-5 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                 </svg>

@@ -53,22 +53,23 @@
           </td>
           <td class="p-3 text-center flex justify-center gap-2 flex-wrap">
             <!-- Tombol Setujui dan Tolak -->
-            <form method="post" action="<?= BASE_URL ?>?c=wali&m=proses" class="flex gap-2">
-              <input type="hidden" name="id" value="<?= $d['id_izin'] ?>">
-              <button name="status" value="diizinkan" class="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200">
+            <form method="post" action="<?= BASE_URL ?>index.php?action=wali.approve" class="flex gap-2">
+              <?= Csrf::field() ?>
+              <input type="hidden" name="id" value="<?= htmlspecialchars($d['id_izin']) ?>">
+              <button type="submit" name="action" value="approve" class="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200">
                 Setujui
               </button>
-              <button name="status" value="ditolak" class="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-200">
+              <button type="submit" name="action" value="reject" class="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-200">
                 Tolak
               </button>
             </form>
             <!-- Tombol Detail -->
-            <a href="<?= BASE_URL ?>?c=wali&m=detail&id_izin=<?= $d['id_izin'] ?>"
+            <a href="<?= BASE_URL ?>index.php?action=wali.detail&id=<?= htmlspecialchars($d['id_izin']) ?>"
                class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200">
               Lihat Detail
             </a>
             <!-- Tombol Hapus -->
-            <a href="<?= BASE_URL ?>?c=wali&m=delete&id=<?= $d['id_izin'] ?>"
+            <a href="<?= BASE_URL ?>index.php?action=wali.delete&id=<?= htmlspecialchars($d['id_izin']) ?>"
                class="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-200"
                onclick="return confirm('Apakah Anda yakin ingin menghapus izin ini?')">
               Hapus

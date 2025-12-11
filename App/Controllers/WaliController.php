@@ -68,20 +68,22 @@ class WaliController {
         
         // Filter by status
         $status = $_GET['status'] ?? 'all';
-        $validStatuses = ['pending', 'approved', 'rejected', 'all'];
+        $validStatuses = ['pending', 'diizinkan', 'ditolak', 'all'];
         
         if (!in_array($status, $validStatuses)) {
             $status = 'all';
         }
         
+        // Resolve pegawai id for current user
+        $db = Database::getInstance();
+        $pegawai = $db->fetchOne("SELECT id_pegawai FROM pegawai WHERE id_user = ?", [$_SESSION['user']['id_user']], 'i');
+        $waliId = $pegawai['id_pegawai'] ?? null;
+
         // Get izin
         if ($status === 'all') {
-            $data = $izinModel->getForWali($_SESSION['user']['id_user']);
+            $data = $izinModel->getForWali($waliId);
         } else {
-            $data = $izinModel->getForWali(
-                $_SESSION['user']['id_user'],
-                $status
-            );
+            $data = $izinModel->getForWali($waliId, $status);
         }
         
         include __DIR__ . '/../Views/wali/index.php';
@@ -192,6 +194,59 @@ class WaliController {
     }
 
     /**
+     * Delete izin (for wali) - only allow deleting pending izin within wali's class
+     */
+    public function delete() {
+        Guard::requireRole('WaliKelas');
+
+        $izinId = (int)($_GET['id'] ?? 0);
+        if (!$izinId) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Izin tidak ditemukan'];
+            header('Location: ' . BASE_URL . 'index.php?action=wali.index');
+            exit;
+        }
+
+        $izinModel = new Izin();
+        $izin = $izinModel->findById($izinId);
+        if (!$izin) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Izin tidak ditemukan'];
+            header('Location: ' . BASE_URL . 'index.php?action=wali.index');
+            exit;
+        }
+
+        // Resolve pegawai id and check class ownership
+        $db = Database::getInstance();
+        $pegawai = $db->fetchOne("SELECT id_pegawai FROM pegawai WHERE id_user = ?", [$_SESSION['user']['id_user']], 'i');
+        $waliId = $pegawai['id_pegawai'] ?? null;
+
+        // Check if the izin belongs to a siswa under this wali
+        $siswaModel = new Siswa();
+        $siswa = $siswaModel->findById($izin['id_siswa']);
+        if (!$siswa || $siswa['id_walikelas'] != $waliId) {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Akses ditolak'];
+            header('Location: ' . BASE_URL . 'index.php?action=wali.index');
+            exit;
+        }
+
+        // Only pending can be deleted
+        if ($izin['status'] !== 'pending') {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Hanya izin pending yang dapat dihapus'];
+            header('Location: ' . BASE_URL . 'index.php?action=wali.detail&id=' . $izinId);
+            exit;
+        }
+
+        $deleted = $izinModel->delete($izinId);
+        if ($deleted) {
+            $_SESSION['flash'] = ['type' => 'success', 'msg' => 'Izin berhasil dihapus'];
+        } else {
+            $_SESSION['flash'] = ['type' => 'danger', 'msg' => 'Gagal menghapus izin'];
+        }
+
+        header('Location: ' . BASE_URL . 'index.php?action=wali.index');
+        exit;
+    }
+
+    /**
      * Filter izin by date range
      * 
      * @access WaliKelas
@@ -204,9 +259,14 @@ class WaliController {
         $startDate = $_GET['start_date'] ?? '';
         $endDate = $_GET['end_date'] ?? '';
         $status = $_GET['status'] ?? 'all';
-        
+
+        // Resolve pegawai id for current user
+        $db = Database::getInstance();
+        $pegawai = $db->fetchOne("SELECT id_pegawai FROM pegawai WHERE id_user = ?", [$_SESSION['user']['id_user']], 'i');
+        $waliId = $pegawai['id_pegawai'] ?? null;
+
         $izinList = $izinModel->getForWali(
-            $_SESSION['user']['id_user'],
+            $waliId,
             $status === 'all' ? null : $status
         );
         
@@ -232,10 +292,12 @@ class WaliController {
         Guard::requireRole('WaliKelas');
         
         $izinModel = new Izin();
-        $izinList = $izinModel->getForWali(
-            $_SESSION['user']['id_user'],
-            'approved'
-        );
+        // use 'diizinkan' status
+        $db = Database::getInstance();
+        $pegawai = $db->fetchOne("SELECT id_pegawai FROM pegawai WHERE id_user = ?", [$_SESSION['user']['id_user']], 'i');
+        $waliId = $pegawai['id_pegawai'] ?? null;
+
+        $izinList = $izinModel->getForWali($waliId, 'diizinkan');
         
         // Set headers for CSV
         header('Content-Type: text/csv; charset=utf-8');
@@ -271,19 +333,13 @@ class WaliController {
         Guard::requireRole('WaliKelas');
         
         $izinModel = new Izin();
-        
-        $pending = $izinModel->getForWali(
-            $_SESSION['user']['id_user'],
-            'pending'
-        );
-        $approved = $izinModel->getForWali(
-            $_SESSION['user']['id_user'],
-            'approved'
-        );
-        $rejected = $izinModel->getForWali(
-            $_SESSION['user']['id_user'],
-            'rejected'
-        );
+        $db = Database::getInstance();
+        $pegawai = $db->fetchOne("SELECT id_pegawai FROM pegawai WHERE id_user = ?", [$_SESSION['user']['id_user']], 'i');
+        $waliId = $pegawai['id_pegawai'] ?? null;
+
+        $pending = $izinModel->getForWali($waliId, 'pending');
+        $approved = $izinModel->getForWali($waliId, 'diizinkan');
+        $rejected = $izinModel->getForWali($waliId, 'ditolak');
         
         $stats = [
             'total_pending' => count($pending),

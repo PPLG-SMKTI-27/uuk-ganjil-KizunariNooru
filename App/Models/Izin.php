@@ -97,12 +97,12 @@ class Izin {
             return false;
         }
 
-        if (!Validator::dateFormat($rencana_keluar)) {
+        if (!Validator::dateFormat($rencana_keluar, 'Y-m-d H:i:s')) {
             Validator::addError('rencana_keluar', 'Format tanggal keluar tidak valid');
             return false;
         }
 
-        if (!Validator::dateFormat($rencana_kembali)) {
+        if (!Validator::dateFormat($rencana_kembali, 'Y-m-d H:i:s')) {
             Validator::addError('rencana_kembali', 'Format tanggal kembali tidak valid');
             return false;
         }
@@ -148,7 +148,7 @@ class Izin {
         }
 
         if ($rencana_keluar !== null) {
-            if (!Validator::dateFormat($rencana_keluar)) {
+            if (!Validator::dateFormat($rencana_keluar, 'Y-m-d H:i:s')) {
                 Validator::addError('rencana_keluar', 'Format tanggal keluar tidak valid');
                 return false;
             }
@@ -158,7 +158,7 @@ class Izin {
         }
 
         if ($rencana_kembali !== null) {
-            if (!Validator::dateFormat($rencana_kembali)) {
+            if (!Validator::dateFormat($rencana_kembali, 'Y-m-d H:i:s')) {
                 Validator::addError('rencana_kembali', 'Format tanggal kembali tidak valid');
                 return false;
             }
